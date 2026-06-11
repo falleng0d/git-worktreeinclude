@@ -161,7 +161,48 @@ func TestApplyAC5DryRun(t *testing.T) {
 	}
 }
 
-func TestApplyLinksWorktreeLinkSubset(t *testing.T) {
+func TestApplyLinksWorktreeLinkOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink behavior and permissions vary on Windows")
+	}
+
+	fx := setupFixture(t)
+	writeFile(t, filepath.Join(fx.root, ".worktreelink"), ".env\n")
+	writeFile(t, filepath.Join(fx.root, ".linkonly.worktreeinclude"), ".env.local\n")
+
+	stdout, stderr, code := runCmd(t, fx.wt, nil, testBinary, "apply", "--from", "auto", "--include", ".linkonly.worktreeinclude", "--json")
+	if code != 0 {
+		t.Fatalf("apply --json exit code = %d, stderr=%s", code, stderr)
+	}
+
+	res := decodeSingleJSON(t, stdout)
+	if res.Summary.Linked != 1 || res.Summary.Copied != 1 {
+		t.Fatalf("expected one linked and one copied file, got %+v", res.Summary)
+	}
+
+	envActionFound := false
+	for _, action := range res.Actions {
+		if action.Path == ".env" {
+			envActionFound = true
+			if action.Op != "link" || action.Status != "done" {
+				t.Fatalf("expected .env link action, got %+v", action)
+			}
+		}
+	}
+	if !envActionFound {
+		t.Fatalf("expected .env action in %+v", res.Actions)
+	}
+
+	info, err := os.Lstat(filepath.Join(fx.wt, ".env"))
+	if err != nil {
+		t.Fatalf("lstat .env: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected .env to be a symlink")
+	}
+}
+
+func TestApplyLinksWorktreeLinkOverlap(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink behavior and permissions vary on Windows")
 	}

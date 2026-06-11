@@ -46,9 +46,10 @@ Tracked files are never copied or linked, even if listed in `.worktreeinclude`.
 
 Optional link manifest:
 
-- Place `.worktreelink` at the source worktree root to symlink a subset of included files instead of copying them.
+- Place `.worktreelink` at the source worktree root to symlink matching files instead of copying them.
 - `.worktreelink` uses the same gitignore-compatible pattern syntax.
-- A path is linked only when it matches both `.worktreeinclude` and `.worktreelink`.
+- A path is linked when it matches `.worktreelink`, even if it is not listed in `.worktreeinclude`.
+- If a path matches both `.worktreeinclude` and `.worktreelink`, the link action wins.
 - If `.worktreelink` is missing, all matched files are copied as before.
 
 Example for a typical app repo with local env, editor settings, and tool-specific cache:
@@ -209,9 +210,7 @@ make test-race
 make ci
 ```
 
-CI runs on pull requests and pushes to `main` via GitHub Actions.
-`golangci-lint` is used with its default configuration (no `.golangci.yml`).
-`make lint` installs a pinned `golangci-lint` binary into `.cache/bin` on first run, so the first run needs network access to fetch the tool.
+CI runs on pull requests and pushes to `main` via GitHub Actions.`golangci-lint` is used with its default configuration (no `.golangci.yml`).`make lint` installs a pinned `golangci-lint` binary into `.cache/bin` on first run, so the first run needs network access to fetch the tool.
 
 ## License
 

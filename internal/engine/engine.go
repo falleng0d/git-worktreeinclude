@@ -145,10 +145,6 @@ func (e *Engine) executePrepared(prep prepared, dryRun, force bool) (Result, int
 		Actions: make([]Action, 0, len(prep.matched)),
 	}
 
-	if !prep.includeFound {
-		return result, exitcode.OK
-	}
-
 	executeActions := !dryRun
 	for _, rel := range prep.matched {
 		op := "copy"
@@ -323,44 +319,44 @@ func (e *Engine) prepare(ctx context.Context, cwd, fromOpt, includeOpt string) (
 	}
 	prep.includePath = includePath
 
-	info, err := os.Stat(includePath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			prep.includeMissingHint = IncludeMissingHintSourceMissing
-			if prep.includeOrigin == IncludeOriginSource && prep.targetIncludePath != "" {
-				if targetInfo, targetErr := os.Lstat(prep.targetIncludePath); targetErr == nil && !targetInfo.IsDir() {
-					prep.includeMissingHint = IncludeMissingHintSourceMissingTargetExists
-				}
-			}
-			return prep, nil
-		}
-		return prepared{}, &CLIError{Code: exitcode.Env, Msg: "failed to read include file", Err: err}
-	}
-	if info.IsDir() {
-		return prepared{}, &CLIError{Code: exitcode.Env, Msg: "include path is a directory", Err: nil}
-	}
-
-	patternCount, err := countPatterns(includePath)
-	if err != nil {
-		return prepared{}, &CLIError{Code: exitcode.Env, Msg: "failed to parse include file", Err: err}
-	}
-	prep.patternCount = patternCount
-	prep.includeFound = true
-
 	ignored, err := e.listIgnored(ctx, sourceRoot, "", true)
 	if err != nil {
 		return prepared{}, err
 	}
-	included, err := e.listIgnored(ctx, sourceRoot, includePath, false)
-	if err != nil {
-		return prepared{}, err
+
+	var included []string
+	if info, err := os.Stat(includePath); err == nil {
+		if info.IsDir() {
+			return prepared{}, &CLIError{Code: exitcode.Env, Msg: "include path is a directory", Err: nil}
+		}
+
+		patternCount, err := countPatterns(includePath)
+		if err != nil {
+			return prepared{}, &CLIError{Code: exitcode.Env, Msg: "failed to parse include file", Err: err}
+		}
+		prep.patternCount = patternCount
+		prep.includeFound = true
+		included, err = e.listIgnored(ctx, sourceRoot, includePath, false)
+		if err != nil {
+			return prepared{}, err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return prepared{}, &CLIError{Code: exitcode.Env, Msg: "failed to read include file", Err: err}
 	}
-	prep.matched = intersectPaths(ignored, included)
+	if !prep.includeFound {
+		prep.includeMissingHint = IncludeMissingHintSourceMissing
+		if prep.includeOrigin == IncludeOriginSource && prep.targetIncludePath != "" {
+			if targetInfo, targetErr := os.Lstat(prep.targetIncludePath); targetErr == nil && !targetInfo.IsDir() {
+				prep.includeMissingHint = IncludeMissingHintSourceMissingTargetExists
+			}
+		}
+	}
 
 	linkPath := filepath.Join(sourceRoot, ".worktreelink")
 	linkInfo, err := os.Stat(linkPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
+			prep.matched = intersectPaths(ignored, included)
 			return prep, nil
 		}
 		return prepared{}, &CLIError{Code: exitcode.Env, Msg: "failed to read link file", Err: err}
@@ -373,7 +369,8 @@ func (e *Engine) prepare(ctx context.Context, cwd, fromOpt, includeOpt string) (
 	if err != nil {
 		return prepared{}, &CLIError{Code: exitcode.Env, Msg: "failed to apply link patterns", Err: err}
 	}
-	prep.linked = pathSet(intersectPaths(prep.matched, linked))
+	prep.linked = pathSet(intersectPaths(ignored, linked))
+	prep.matched = unionPaths(intersectPaths(ignored, included), intersectPaths(ignored, linked))
 	return prep, nil
 }
 
@@ -600,6 +597,22 @@ func intersectPaths(a, b []string) []string {
 	}
 	out := make([]string, 0, len(outSet))
 	for p := range outSet {
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func unionPaths(a, b []string) []string {
+	set := make(map[string]struct{}, len(a)+len(b))
+	for _, p := range a {
+		set[p] = struct{}{}
+	}
+	for _, p := range b {
+		set[p] = struct{}{}
+	}
+	out := make([]string, 0, len(set))
+	for p := range set {
 		out = append(out, p)
 	}
 	sort.Strings(out)
