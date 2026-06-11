@@ -202,6 +202,48 @@ func TestApplyLinksWorktreeLinkOnly(t *testing.T) {
 	}
 }
 
+func TestApplyLinksDirectoryRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink behavior and permissions vary on Windows")
+	}
+
+	fx := setupFixture(t)
+	writeFile(t, filepath.Join(fx.root, ".gitignore"), ".env\n.env.local\nplans/\n")
+	if err := os.MkdirAll(filepath.Join(fx.root, "plans"), 0o755); err != nil {
+		t.Fatalf("mkdir plans: %v", err)
+	}
+	writeFile(t, filepath.Join(fx.root, "plans", "note.txt"), "SOURCE_PLAN\n")
+	writeFile(t, filepath.Join(fx.root, ".worktreelink"), "/plans\n")
+
+	stdout, stderr, code := runCmd(t, fx.wt, nil, testBinary, "apply", "--from", "auto", "--include", testIncludeFile, "--json")
+	if code != 0 {
+		t.Fatalf("apply --json exit code = %d, stderr=%s", code, stderr)
+	}
+
+	res := decodeSingleJSON(t, stdout)
+	if res.Summary.Linked != 1 {
+		t.Fatalf("expected one linked directory, got %+v", res.Summary)
+	}
+
+	info, err := os.Lstat(filepath.Join(fx.wt, "plans"))
+	if err != nil {
+		t.Fatalf("lstat plans: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected plans to be a symlink")
+	}
+	target, err := os.Readlink(filepath.Join(fx.wt, "plans"))
+	if err != nil {
+		t.Fatalf("readlink plans: %v", err)
+	}
+	if filepath.Clean(target) != filepath.Join(fx.root, "plans") {
+		t.Fatalf("unexpected symlink target: %q", target)
+	}
+	if strings.Contains(stderr, "error") {
+		t.Fatalf("unexpected stderr: %s", stderr)
+	}
+}
+
 func TestApplyLinksWorktreeLinkOverlap(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink behavior and permissions vary on Windows")

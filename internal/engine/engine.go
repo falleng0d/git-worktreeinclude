@@ -187,7 +187,7 @@ func (e *Engine) executePrepared(prep prepared, dryRun, force, forceLink bool) (
 			result.Summary.SkippedMissingSrc++
 			continue
 		}
-		if !srcInfo.Mode().IsRegular() {
+		if op == "copy" && !srcInfo.Mode().IsRegular() {
 			result.Actions = append(result.Actions, Action{Op: "skip", Path: rel, Status: "missing_src"})
 			result.Summary.SkippedMissingSrc++
 			continue
@@ -374,8 +374,14 @@ func (e *Engine) prepare(ctx context.Context, cwd, fromOpt, includeOpt string) (
 	if err != nil {
 		return prepared{}, &CLIError{Code: exitcode.Env, Msg: "failed to apply link patterns", Err: err}
 	}
-	prep.linked = pathSet(intersectPaths(ignored, linked))
-	prep.matched = unionPaths(intersectPaths(ignored, included), intersectPaths(ignored, linked))
+	linkRoots, err := collectLinkRoots(linkPath, sourceRoot)
+	if err != nil {
+		return prepared{}, &CLIError{Code: exitcode.Env, Msg: "failed to parse link directories", Err: err}
+	}
+	fileLinked := intersectPaths(ignored, linked)
+	fileMatched := unionPaths(intersectPaths(ignored, included), fileLinked)
+	prep.linked = pathSet(unionPaths(fileLinked, linkRoots))
+	prep.matched = unionPaths(filterDescendantPaths(fileMatched, linkRoots), linkRoots)
 	return prep, nil
 }
 
@@ -624,6 +630,83 @@ func unionPaths(a, b []string) []string {
 	return out
 }
 
+func filterDescendantPaths(paths, roots []string) []string {
+	if len(paths) == 0 || len(roots) == 0 {
+		out := make([]string, len(paths))
+		copy(out, paths)
+		return out
+	}
+	keep := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if isDescendantOfAny(p, roots) {
+			continue
+		}
+		keep = append(keep, p)
+	}
+	return keep
+}
+
+func isDescendantOfAny(path string, roots []string) bool {
+	for _, root := range roots {
+		if path == root {
+			continue
+		}
+		if strings.HasPrefix(path, root+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func collectLinkRoots(linkPath, sourceRoot string) ([]string, error) {
+	f, err := os.Open(linkPath)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	seen := map[string]struct{}{}
+	roots := make([]string, 0)
+	for scanner.Scan() {
+		raw := strings.TrimSpace(scanner.Text())
+		if raw == "" || strings.HasPrefix(raw, "#") || strings.HasPrefix(raw, "!") {
+			continue
+		}
+		if strings.ContainsAny(raw, "*?[") {
+			continue
+		}
+		candidate := strings.TrimSuffix(raw, "/")
+		candidate = strings.TrimPrefix(candidate, "/")
+		if candidate == "" {
+			continue
+		}
+		norm, err := normalizeRepoPath(candidate)
+		if err != nil {
+			continue
+		}
+		if _, ok := seen[norm]; ok {
+			continue
+		}
+		abs, err := secureJoin(sourceRoot, norm)
+		if err != nil {
+			continue
+		}
+		info, err := os.Stat(abs)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		seen[norm] = struct{}{}
+		roots = append(roots, norm)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	sort.Strings(roots)
+	return roots, nil
+}
+
 func pathSet(paths []string) map[string]struct{} {
 	set := make(map[string]struct{}, len(paths))
 	for _, p := range paths {
@@ -751,7 +834,7 @@ func linkFile(targetRoot, srcPath, dstPath string, force bool) error {
 		return err
 	}
 	if force {
-		if err := os.Remove(dstPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := os.RemoveAll(dstPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 	}

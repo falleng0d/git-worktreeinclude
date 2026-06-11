@@ -46,7 +46,7 @@ Tracked files are never copied or linked, even if listed in `.worktreeinclude`.
 
 Optional link manifest:
 
-- Place `.worktreelink` at the source worktree root to symlink matching files instead of copying them.
+- Place `.worktreelink` at the source worktree root to symlink matching files or directories instead of copying them.
 - `.worktreelink` uses the same gitignore-compatible pattern syntax.
 - A path is linked when it matches `.worktreelink`, even if it is not listed in `.worktreeinclude`.
 - If a path matches both `.worktreeinclude` and `.worktreelink`, the link action wins.
