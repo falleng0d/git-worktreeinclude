@@ -228,6 +228,59 @@ func TestEngineApplyConflictAndForce(t *testing.T) {
 	}
 }
 
+func TestEngineApplyForceLinkOnlyForLinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink behavior and permissions vary on Windows")
+	}
+
+	fx := setupEngineFixture(t)
+	e := NewEngine()
+	writeFile(t, filepath.Join(fx.root, ".worktreelink"), ".env\n")
+	writeFile(t, filepath.Join(fx.wt, ".env"), "TARGET_LINK\n")
+	writeFile(t, filepath.Join(fx.wt, ".env.local"), "TARGET_LOCAL\n")
+
+	res, code, err := e.Apply(context.Background(), fx.wt, ApplyOptions{
+		From:      "auto",
+		Include:   testIncludeFile,
+		ForceLink: true,
+	})
+	if err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+	if code != exitcode.Conflict {
+		t.Fatalf("Apply exit code = %d, want %d", code, exitcode.Conflict)
+	}
+	if res.Summary.Linked != 1 {
+		t.Fatalf("expected one linked file, got %+v", res.Summary)
+	}
+	if res.Summary.Conflicts != 1 {
+		t.Fatalf("expected one conflict for copied file, got %+v", res.Summary)
+	}
+
+	linkInfo, err := os.Lstat(filepath.Join(fx.wt, ".env"))
+	if err != nil {
+		t.Fatalf("lstat linked .env: %v", err)
+	}
+	if linkInfo.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected .env to be a symlink")
+	}
+	target, err := os.Readlink(filepath.Join(fx.wt, ".env"))
+	if err != nil {
+		t.Fatalf("readlink .env: %v", err)
+	}
+	if filepath.Clean(target) != filepath.Join(fx.root, ".env") {
+		t.Fatalf("unexpected symlink target: %q", target)
+	}
+
+	gotConflict, err := os.ReadFile(filepath.Join(fx.wt, ".env.local"))
+	if err != nil {
+		t.Fatalf("read conflict target .env.local: %v", err)
+	}
+	if string(gotConflict) != "TARGET_LOCAL\n" {
+		t.Fatalf("copy target should remain unchanged without --force, got %q", gotConflict)
+	}
+}
+
 func TestEngineApplySkipsSameContent(t *testing.T) {
 	fx := setupEngineFixture(t)
 	e := NewEngine()

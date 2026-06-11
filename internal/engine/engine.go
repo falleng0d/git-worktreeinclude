@@ -54,10 +54,11 @@ type Result struct {
 }
 
 type ApplyOptions struct {
-	From    string
-	Include string
-	DryRun  bool
-	Force   bool
+	From      string
+	Include   string
+	DryRun    bool
+	Force     bool
+	ForceLink bool
 }
 
 type Engine struct {
@@ -123,11 +124,11 @@ func (e *Engine) Apply(ctx context.Context, cwd string, opts ApplyOptions) (Resu
 		return Result{}, errorCode(err), err
 	}
 
-	result, code := e.executePrepared(prep, opts.DryRun, opts.Force)
+	result, code := e.executePrepared(prep, opts.DryRun, opts.Force, opts.ForceLink)
 	return result, code, nil
 }
 
-func (e *Engine) executePrepared(prep prepared, dryRun, force bool) (Result, int) {
+func (e *Engine) executePrepared(prep prepared, dryRun, force, forceLink bool) (Result, int) {
 	result := Result{
 		DryRun:              dryRun,
 		From:                prep.sourceRoot,
@@ -150,6 +151,10 @@ func (e *Engine) executePrepared(prep prepared, dryRun, force bool) (Result, int
 		op := "copy"
 		if _, ok := prep.linked[rel]; ok {
 			op = "link"
+		}
+		forceThis := force
+		if op == "link" && forceLink {
+			forceThis = true
 		}
 
 		srcPath, err := secureJoin(prep.sourceRoot, rel)
@@ -244,7 +249,7 @@ func (e *Engine) executePrepared(prep prepared, dryRun, force bool) (Result, int
 			}
 		}
 
-		if !force {
+		if !forceThis {
 			result.Actions = append(result.Actions, Action{Op: "conflict", Path: rel, Status: "diff"})
 			result.Summary.Conflicts++
 			continue

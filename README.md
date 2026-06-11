@@ -87,7 +87,7 @@ git-worktreeinclude -v
 Uses the current worktree as target and copies from source worktree.
 
 ```sh
-git-worktreeinclude apply [--from auto|<path>] [--include <path>] [--dry-run] [--force] [--json] [--quiet] [--verbose]
+git-worktreeinclude apply [--from auto|<path>] [--include <path>] [--dry-run] [--force] [--force-link] [--json] [--quiet] [--verbose]
 ```
 
 - `--from`: `auto` (default) chooses the first non-bare worktree from `git worktree list --porcelain -z` (typically the main worktree)
@@ -98,6 +98,7 @@ git-worktreeinclude apply [--from auto|<path>] [--include <path>] [--dry-run] [-
   - use `--dry-run --verbose` when you want diagnostics about source/target selection, include file resolution, and planned actions
   - in dry-run mode, the human-readable summary uses `copy_planned=` and `link_planned=` instead of `copied=` and `linked=`, and the JSON summary uses `"copy_planned"` / `"link_planned"` instead of `"copied"` / `"linked"`
 - `--force`: overwrite differing target files
+- `--force-link`: overwrite differing linked files only
 - `--json`: emit a single JSON object to stdout
 - `--quiet`: suppress human-readable output
 - `--verbose`: print additional details
@@ -194,7 +195,7 @@ git -C <path> worktreeinclude apply --json
 
 - `not inside a git repository`: run from a Git repository
 - `source and target are not from the same repository`: verify `--from` points to the same repo worktree
-- conflict exit: use `--force` or resolve target differences first
+- conflict exit: use `--force` for copies, `--force-link` for links, or resolve target differences first
 - no-op due to missing include: verify `.worktreeinclude` exists in the source worktree selected by `--from`
 - if include exists only in target: copy that file to source worktree (or run with a different `--from`)
 

@@ -73,6 +73,7 @@ func (a *App) newApplyCommand() *ucli.Command {
 			&ucli.StringFlag{Name: "include", Value: ".worktreeinclude", Usage: "path to include file", TakesFile: true},
 			&ucli.BoolFlag{Name: "dry-run", Usage: "show planned actions without copying"},
 			&ucli.BoolFlag{Name: "force", Usage: "overwrite differing target files"},
+			&ucli.BoolFlag{Name: "force-link", Usage: "overwrite differing linked files only"},
 			&ucli.BoolFlag{Name: "json", Usage: "emit JSON output"},
 			&ucli.BoolFlag{Name: "quiet", Usage: "suppress human-readable output"},
 			&ucli.BoolFlag{Name: "verbose", Usage: "enable verbose output"},
@@ -90,6 +91,7 @@ func (a *App) runApply(ctx context.Context, cmd *ucli.Command) error {
 	include := cmd.String("include")
 	dryRun := cmd.Bool("dry-run")
 	force := cmd.Bool("force")
+	forceLink := cmd.Bool("force-link")
 	jsonOut := cmd.Bool("json")
 	quiet := cmd.Bool("quiet")
 	verbose := cmd.Bool("verbose")
@@ -107,10 +109,11 @@ func (a *App) runApply(ctx context.Context, cmd *ucli.Command) error {
 	}
 
 	result, code, err := a.engine.Apply(ctx, wd, engine.ApplyOptions{
-		From:    from,
-		Include: include,
-		DryRun:  dryRun,
-		Force:   force,
+		From:      from,
+		Include:   include,
+		DryRun:    dryRun,
+		Force:     force,
+		ForceLink: forceLink,
 	})
 	if err != nil {
 		return ucli.Exit(err, code)

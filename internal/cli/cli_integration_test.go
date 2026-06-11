@@ -242,6 +242,45 @@ func TestApplyLinksWorktreeLinkOverlap(t *testing.T) {
 	}
 }
 
+func TestApplyForceLinkOnlyForLinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink behavior and permissions vary on Windows")
+	}
+
+	fx := setupFixture(t)
+	writeFile(t, filepath.Join(fx.root, ".worktreelink"), ".env\n")
+	writeFile(t, filepath.Join(fx.wt, ".env"), "TARGET_LINK\n")
+	writeFile(t, filepath.Join(fx.wt, ".env.local"), "TARGET_LOCAL\n")
+
+	stdout, stderr, code := runCmd(t, fx.wt, nil, testBinary, "apply", "--from", "auto", "--include", testIncludeFile, "--force-link", "--json")
+	if code != 3 {
+		t.Fatalf("apply --force-link --json exit code = %d, stderr=%s", code, stderr)
+	}
+
+	res := decodeSingleJSON(t, stdout)
+	if res.Summary.Linked != 1 {
+		t.Fatalf("expected one linked file, got %+v", res.Summary)
+	}
+	if res.Summary.Conflicts != 1 {
+		t.Fatalf("expected one conflict for copied file, got %+v", res.Summary)
+	}
+
+	info, err := os.Lstat(filepath.Join(fx.wt, ".env"))
+	if err != nil {
+		t.Fatalf("lstat .env: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected .env to be a symlink")
+	}
+	gotConflict, err := os.ReadFile(filepath.Join(fx.wt, ".env.local"))
+	if err != nil {
+		t.Fatalf("read conflict target .env.local: %v", err)
+	}
+	if string(gotConflict) != "TARGET_LOCAL\n" {
+		t.Fatalf("copy target should remain unchanged without --force, got %q", gotConflict)
+	}
+}
+
 func TestApplyDryRunReportsLinks(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink behavior and permissions vary on Windows")
