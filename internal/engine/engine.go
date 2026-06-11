@@ -28,6 +28,8 @@ type Summary struct {
 	Matched           int `json:"matched"`
 	Copied            int `json:"copied,omitempty"`
 	CopyPlanned       int `json:"copy_planned,omitempty"`
+	Linked            int `json:"linked,omitempty"`
+	LinkPlanned       int `json:"link_planned,omitempty"`
 	SkippedSame       int `json:"skipped_same"`
 	SkippedMissingSrc int `json:"skipped_missing_src"`
 	Conflicts         int `json:"conflicts"`
@@ -104,6 +106,7 @@ type prepared struct {
 	targetIncludePath  string
 	patternCount       int
 	matched            []string
+	linked             map[string]struct{}
 }
 
 const (
@@ -146,8 +149,13 @@ func (e *Engine) executePrepared(prep prepared, dryRun, force bool) (Result, int
 		return result, exitcode.OK
 	}
 
-	executeCopies := !dryRun
+	executeActions := !dryRun
 	for _, rel := range prep.matched {
+		op := "copy"
+		if _, ok := prep.linked[rel]; ok {
+			op = "link"
+		}
+
 		srcPath, err := secureJoin(prep.sourceRoot, rel)
 		if err != nil {
 			result.Actions = append(result.Actions, Action{Op: "skip", Path: rel, Status: "error"})
@@ -193,20 +201,16 @@ func (e *Engine) executePrepared(prep prepared, dryRun, force bool) (Result, int
 
 		if errors.Is(err, os.ErrNotExist) {
 			status := "planned"
-			if executeCopies {
-				if err := copyFileAtomic(prep.targetRoot, srcPath, dstPath, srcInfo.Mode().Perm()); err != nil {
-					result.Actions = append(result.Actions, Action{Op: "copy", Path: rel, Status: "error"})
+			if executeActions {
+				if err := materializeFile(prep.targetRoot, srcPath, dstPath, srcInfo.Mode().Perm(), op, false); err != nil {
+					result.Actions = append(result.Actions, Action{Op: op, Path: rel, Status: "error"})
 					result.Summary.Errors++
 					continue
 				}
 				status = "done"
 			}
-			result.Actions = append(result.Actions, Action{Op: "copy", Path: rel, Status: status})
-			if dryRun {
-				result.Summary.CopyPlanned++
-			} else {
-				result.Summary.Copied++
-			}
+			result.Actions = append(result.Actions, Action{Op: op, Path: rel, Status: status})
+			recordMaterialized(&result.Summary, op, dryRun)
 			continue
 		}
 
@@ -216,7 +220,21 @@ func (e *Engine) executePrepared(prep prepared, dryRun, force bool) (Result, int
 			continue
 		}
 
-		if dstInfo.Mode()&os.ModeSymlink == 0 {
+		if op == "link" && dstInfo.Mode()&os.ModeSymlink != 0 {
+			same, err := symlinkPointsTo(dstPath, srcPath)
+			if err != nil {
+				result.Actions = append(result.Actions, Action{Op: "skip", Path: rel, Status: "error"})
+				result.Summary.Errors++
+				continue
+			}
+			if same {
+				result.Actions = append(result.Actions, Action{Op: "skip", Path: rel, Status: "same"})
+				result.Summary.SkippedSame++
+				continue
+			}
+		}
+
+		if op == "copy" && dstInfo.Mode()&os.ModeSymlink == 0 {
 			same, err := filesSame(srcPath, dstPath)
 			if err != nil {
 				result.Actions = append(result.Actions, Action{Op: "skip", Path: rel, Status: "error"})
@@ -237,20 +255,16 @@ func (e *Engine) executePrepared(prep prepared, dryRun, force bool) (Result, int
 		}
 
 		status := "planned"
-		if executeCopies {
-			if err := copyFileAtomic(prep.targetRoot, srcPath, dstPath, srcInfo.Mode().Perm()); err != nil {
-				result.Actions = append(result.Actions, Action{Op: "copy", Path: rel, Status: "error"})
+		if executeActions {
+			if err := materializeFile(prep.targetRoot, srcPath, dstPath, srcInfo.Mode().Perm(), op, true); err != nil {
+				result.Actions = append(result.Actions, Action{Op: op, Path: rel, Status: "error"})
 				result.Summary.Errors++
 				continue
 			}
 			status = "done"
 		}
-		result.Actions = append(result.Actions, Action{Op: "copy", Path: rel, Status: status})
-		if dryRun {
-			result.Summary.CopyPlanned++
-		} else {
-			result.Summary.Copied++
-		}
+		result.Actions = append(result.Actions, Action{Op: op, Path: rel, Status: status})
+		recordMaterialized(&result.Summary, op, dryRun)
 	}
 
 	if result.Summary.Errors > 0 {
@@ -342,6 +356,24 @@ func (e *Engine) prepare(ctx context.Context, cwd, fromOpt, includeOpt string) (
 		return prepared{}, err
 	}
 	prep.matched = intersectPaths(ignored, included)
+
+	linkPath := filepath.Join(sourceRoot, ".worktreelink")
+	linkInfo, err := os.Stat(linkPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return prep, nil
+		}
+		return prepared{}, &CLIError{Code: exitcode.Env, Msg: "failed to read link file", Err: err}
+	}
+	if linkInfo.IsDir() {
+		return prepared{}, &CLIError{Code: exitcode.Env, Msg: "link path is a directory", Err: nil}
+	}
+
+	linked, err := e.listIgnored(ctx, sourceRoot, linkPath, false)
+	if err != nil {
+		return prepared{}, &CLIError{Code: exitcode.Env, Msg: "failed to apply link patterns", Err: err}
+	}
+	prep.linked = pathSet(intersectPaths(prep.matched, linked))
 	return prep, nil
 }
 
@@ -574,6 +606,14 @@ func intersectPaths(a, b []string) []string {
 	return out
 }
 
+func pathSet(paths []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(paths))
+	for _, p := range paths {
+		set[p] = struct{}{}
+	}
+	return set
+}
+
 func filesSame(srcPath, dstPath string) (bool, error) {
 	srcInfo, err := os.Stat(srcPath)
 	if err != nil {
@@ -675,6 +715,64 @@ func copyFileAtomic(targetRoot, srcPath, dstPath string, perm os.FileMode) error
 	}
 
 	return nil
+}
+
+func materializeFile(targetRoot, srcPath, dstPath string, perm os.FileMode, op string, force bool) error {
+	if op == "link" {
+		return linkFile(targetRoot, srcPath, dstPath, force)
+	}
+	return copyFileAtomic(targetRoot, srcPath, dstPath, perm)
+}
+
+func linkFile(targetRoot, srcPath, dstPath string, force bool) error {
+	parent := filepath.Dir(dstPath)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return err
+	}
+	if err := ensurePathWithinRoot(targetRoot, parent); err != nil {
+		return err
+	}
+	if force {
+		if err := os.Remove(dstPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return os.Symlink(srcPath, dstPath)
+}
+
+func symlinkPointsTo(linkPath, targetPath string) (bool, error) {
+	dest, err := os.Readlink(linkPath)
+	if err != nil {
+		return false, err
+	}
+	if !filepath.IsAbs(dest) {
+		dest = filepath.Join(filepath.Dir(linkPath), dest)
+	}
+	destAbs, err := filepath.Abs(dest)
+	if err != nil {
+		return false, err
+	}
+	targetAbs, err := filepath.Abs(targetPath)
+	if err != nil {
+		return false, err
+	}
+	return filepath.Clean(destAbs) == filepath.Clean(targetAbs), nil
+}
+
+func recordMaterialized(summary *Summary, op string, dryRun bool) {
+	if op == "link" {
+		if dryRun {
+			summary.LinkPlanned++
+		} else {
+			summary.Linked++
+		}
+		return
+	}
+	if dryRun {
+		summary.CopyPlanned++
+	} else {
+		summary.Copied++
+	}
 }
 
 func ensurePathWithinRoot(root, candidate string) error {

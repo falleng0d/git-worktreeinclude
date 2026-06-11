@@ -53,6 +53,86 @@ func TestEngineApplyCopiesIgnoredFiles(t *testing.T) {
 	}
 }
 
+func TestEngineApplyLinksWorktreeLinkSubset(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink behavior and permissions vary on Windows")
+	}
+
+	fx := setupEngineFixture(t)
+	e := NewEngine()
+	writeFile(t, filepath.Join(fx.root, ".worktreelink"), ".env\nREADME.md\n")
+
+	res, code, err := e.Apply(context.Background(), fx.wt, ApplyOptions{
+		From:    "auto",
+		Include: testIncludeFile,
+	})
+	if err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+	if code != exitcode.OK {
+		t.Fatalf("Apply exit code = %d, want %d", code, exitcode.OK)
+	}
+	if res.Summary.Linked != 1 || res.Summary.Copied != 1 {
+		t.Fatalf("expected one linked and one copied file, got %+v", res.Summary)
+	}
+	if action := findAction(t, res.Actions, ".env"); action.Op != "link" || action.Status != "done" {
+		t.Fatalf("expected .env link action, got %+v", action)
+	}
+	if action := findAction(t, res.Actions, ".env.local"); action.Op != "copy" || action.Status != "done" {
+		t.Fatalf("expected .env.local copy action, got %+v", action)
+	}
+
+	linkPath := filepath.Join(fx.wt, ".env")
+	info, err := os.Lstat(linkPath)
+	if err != nil {
+		t.Fatalf("lstat linked .env: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected .env to be a symlink")
+	}
+	target, err := os.Readlink(linkPath)
+	if err != nil {
+		t.Fatalf("readlink .env: %v", err)
+	}
+	if filepath.Clean(target) != filepath.Join(fx.root, ".env") {
+		t.Fatalf("unexpected symlink target: %q", target)
+	}
+	if _, err := os.Lstat(filepath.Join(fx.wt, "README.md")); err != nil {
+		t.Fatalf("tracked README should remain from worktree checkout: %v", err)
+	}
+}
+
+func TestEngineApplyDryRunPlansLinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink behavior and permissions vary on Windows")
+	}
+
+	fx := setupEngineFixture(t)
+	e := NewEngine()
+	writeFile(t, filepath.Join(fx.root, ".worktreelink"), ".env\n")
+
+	res, code, err := e.Apply(context.Background(), fx.wt, ApplyOptions{
+		From:    "auto",
+		Include: testIncludeFile,
+		DryRun:  true,
+	})
+	if err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+	if code != exitcode.OK {
+		t.Fatalf("Apply exit code = %d, want %d", code, exitcode.OK)
+	}
+	if res.Summary.LinkPlanned != 1 || res.Summary.CopyPlanned != 1 {
+		t.Fatalf("expected one planned link and one planned copy, got %+v", res.Summary)
+	}
+	if action := findAction(t, res.Actions, ".env"); action.Op != "link" || action.Status != "planned" {
+		t.Fatalf("expected planned .env link action, got %+v", action)
+	}
+	if _, err := os.Lstat(filepath.Join(fx.wt, ".env")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("dry-run should not create .env symlink, stat err=%v", err)
+	}
+}
+
 func TestEngineApplyConflictAndForce(t *testing.T) {
 	fx := setupEngineFixture(t)
 	e := NewEngine()

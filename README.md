@@ -33,7 +33,7 @@ Or via Git extension:
 git worktreeinclude apply
 ```
 
-## `.worktreeinclude` semantics
+## `.worktreeinclude` and `.worktreelink` semantics
 
 - Place `.worktreeinclude` at the source worktree root (by default, this is typically the main worktree selected by `--from auto`).
 - Format is gitignore-compatible (`#` comments, blank lines, `!` negation, `/` anchors, `**`, etc.).
@@ -42,7 +42,14 @@ git worktreeinclude apply
   - Paths matching `.worktreeinclude`
   - Paths Git classifies as ignored
 
-Tracked files are never copied, even if listed in `.worktreeinclude`.
+Tracked files are never copied or linked, even if listed in `.worktreeinclude`.
+
+Optional link manifest:
+
+- Place `.worktreelink` at the source worktree root to symlink a subset of included files instead of copying them.
+- `.worktreelink` uses the same gitignore-compatible pattern syntax.
+- A path is linked only when it matches both `.worktreeinclude` and `.worktreelink`.
+- If `.worktreelink` is missing, all matched files are copied as before.
 
 Example for a typical app repo with local env, editor settings, and tool-specific cache:
 
@@ -54,6 +61,13 @@ Example for a typical app repo with local env, editor settings, and tool-specifi
 .vscode/settings.json
 .mise.local.toml
 turbo/.cache/
+```
+
+Example `.worktreelink`:
+
+```gitignore
+.env
+.mise.local.toml
 ```
 
 ## Commands
@@ -81,7 +95,7 @@ git-worktreeinclude apply [--from auto|<path>] [--include <path>] [--dry-run] [-
   - absolute path: must be inside source worktree root
 - `--dry-run`: plan only, make no changes
   - use `--dry-run --verbose` when you want diagnostics about source/target selection, include file resolution, and planned actions
-  - in dry-run mode, the human-readable summary uses `copy_planned=` instead of `copied=`, and the JSON summary uses `"copy_planned"` instead of `"copied"`
+  - in dry-run mode, the human-readable summary uses `copy_planned=` and `link_planned=` instead of `copied=` and `linked=`, and the JSON summary uses `"copy_planned"` / `"link_planned"` instead of `"copied"` / `"linked"`
 - `--force`: overwrite differing target files
 - `--json`: emit a single JSON object to stdout
 - `--quiet`: suppress human-readable output
@@ -108,7 +122,8 @@ Normal execution (`apply --json`):
   "include_file": ".worktreeinclude",
   "summary": {
     "matched": 12,
-    "copied": 8,
+    "copied": 6,
+    "linked": 2,
     "skipped_same": 3,
     "skipped_missing_src": 1,
     "conflicts": 0,
@@ -116,7 +131,8 @@ Normal execution (`apply --json`):
   },
   "actions": [
     {"op": "copy", "path": ".env", "status": "done"},
-    {"op": "skip", "path": ".mise.local.toml", "status": "same"},
+    {"op": "link", "path": ".mise.local.toml", "status": "done"},
+    {"op": "skip", "path": ".env.local", "status": "same"},
     {"op": "conflict", "path": ".vscode/settings.json", "status": "diff"}
   ]
 }
@@ -132,7 +148,8 @@ Dry-run mode (`apply --dry-run --json`):
   "include_file": ".worktreeinclude",
   "summary": {
     "matched": 12,
-    "copy_planned": 8,
+    "copy_planned": 6,
+    "link_planned": 2,
     "skipped_same": 3,
     "skipped_missing_src": 1,
     "conflicts": 0,
@@ -140,14 +157,15 @@ Dry-run mode (`apply --dry-run --json`):
   },
   "actions": [
     {"op": "copy", "path": ".env", "status": "planned"},
-    {"op": "skip", "path": ".mise.local.toml", "status": "same"},
+    {"op": "link", "path": ".mise.local.toml", "status": "planned"},
+    {"op": "skip", "path": ".env.local", "status": "same"},
     {"op": "conflict", "path": ".vscode/settings.json", "status": "diff"}
   ]
 }
 ```
 
 - `"dry_run": true` indicates no files were written
-- In dry-run mode `"copy_planned"` is used instead of `"copied"` in the summary (they are mutually exclusive)
+- In dry-run mode `"copy_planned"` and `"link_planned"` are used instead of `"copied"` and `"linked"` in the summary
 - `path` is repo-root relative and slash-separated
 - File contents and secrets are never output
 

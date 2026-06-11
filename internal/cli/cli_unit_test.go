@@ -114,6 +114,11 @@ func TestFormatActionLine(t *testing.T) {
 			want:   "COPY      .env (dry-run)",
 		},
 		{
+			name:   "link planned",
+			action: engine.Action{Op: "link", Path: ".env", Status: "planned"},
+			want:   "LINK      .env (dry-run)",
+		},
+		{
 			name:   "conflict default",
 			action: engine.Action{Op: "conflict", Path: ".env.local", Status: "diff"},
 			want:   "CONFLICT  .env.local (differs; use --force)",

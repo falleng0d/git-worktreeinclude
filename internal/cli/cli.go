@@ -162,9 +162,10 @@ func (a *App) runApply(ctx context.Context, cmd *ucli.Command) error {
 			if dryRun {
 				writef(
 					a.stdout,
-					"SUMMARY matched=%d copy_planned=%d skipped_same=%d skipped_missing_src=%d conflicts=%d errors=%d\n",
+					"SUMMARY matched=%d copy_planned=%d link_planned=%d skipped_same=%d skipped_missing_src=%d conflicts=%d errors=%d\n",
 					result.Summary.Matched,
 					result.Summary.CopyPlanned,
+					result.Summary.LinkPlanned,
 					result.Summary.SkippedSame,
 					result.Summary.SkippedMissingSrc,
 					result.Summary.Conflicts,
@@ -173,9 +174,10 @@ func (a *App) runApply(ctx context.Context, cmd *ucli.Command) error {
 			} else {
 				writef(
 					a.stdout,
-					"SUMMARY matched=%d copied=%d skipped_same=%d skipped_missing_src=%d conflicts=%d errors=%d\n",
+					"SUMMARY matched=%d copied=%d linked=%d skipped_same=%d skipped_missing_src=%d conflicts=%d errors=%d\n",
 					result.Summary.Matched,
 					result.Summary.Copied,
+					result.Summary.Linked,
 					result.Summary.SkippedSame,
 					result.Summary.SkippedMissingSrc,
 					result.Summary.Conflicts,
@@ -241,6 +243,14 @@ func formatActionLine(action engine.Action, force bool) string {
 			return fmt.Sprintf("ERROR     %s (copy failed)", action.Path)
 		}
 		return fmt.Sprintf("COPY      %s", action.Path)
+	case "link":
+		if action.Status == "planned" {
+			return fmt.Sprintf("LINK      %s (dry-run)", action.Path)
+		}
+		if action.Status == "error" {
+			return fmt.Sprintf("ERROR     %s (link failed)", action.Path)
+		}
+		return fmt.Sprintf("LINK      %s", action.Path)
 	case "conflict":
 		if force {
 			return fmt.Sprintf("COPY      %s", action.Path)

@@ -59,6 +59,8 @@ type jsonResult struct {
 		Matched           int `json:"matched"`
 		Copied            int `json:"copied"`
 		CopyPlanned       int `json:"copy_planned"`
+		Linked            int `json:"linked"`
+		LinkPlanned       int `json:"link_planned"`
 		SkippedSame       int `json:"skipped_same"`
 		SkippedMissingSrc int `json:"skipped_missing_src"`
 		Conflicts         int `json:"conflicts"`
@@ -156,6 +158,69 @@ func TestApplyAC5DryRun(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(fx.wt, ".env")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("dry-run should not create .env")
+	}
+}
+
+func TestApplyLinksWorktreeLinkSubset(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink behavior and permissions vary on Windows")
+	}
+
+	fx := setupFixture(t)
+	writeFile(t, filepath.Join(fx.root, ".worktreelink"), ".env\n")
+
+	stdout, stderr, code := runCmd(t, fx.wt, nil, testBinary, "apply", "--from", "auto", "--include", testIncludeFile, "--json")
+	if code != 0 {
+		t.Fatalf("apply --json exit code = %d, stderr=%s", code, stderr)
+	}
+
+	res := decodeSingleJSON(t, stdout)
+	if res.Summary.Linked != 1 || res.Summary.Copied != 1 {
+		t.Fatalf("expected one linked and one copied file, got %+v", res.Summary)
+	}
+
+	envActionFound := false
+	for _, action := range res.Actions {
+		if action.Path == ".env" {
+			envActionFound = true
+			if action.Op != "link" || action.Status != "done" {
+				t.Fatalf("expected .env link action, got %+v", action)
+			}
+		}
+	}
+	if !envActionFound {
+		t.Fatalf("expected .env action in %+v", res.Actions)
+	}
+
+	info, err := os.Lstat(filepath.Join(fx.wt, ".env"))
+	if err != nil {
+		t.Fatalf("lstat .env: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected .env to be a symlink")
+	}
+}
+
+func TestApplyDryRunReportsLinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink behavior and permissions vary on Windows")
+	}
+
+	fx := setupFixture(t)
+	writeFile(t, filepath.Join(fx.root, ".worktreelink"), ".env\n")
+
+	stdout, stderr, code := runCmd(t, fx.wt, nil, testBinary, "apply", "--from", "auto", "--include", testIncludeFile, "--dry-run", "--verbose")
+	if code != 0 {
+		t.Fatalf("apply --dry-run --verbose exit code = %d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "LINK      .env (dry-run)") {
+		t.Fatalf("dry-run output missing link action: %s", stdout)
+	}
+	if !strings.Contains(stdout, "link_planned=1") {
+		t.Fatalf("dry-run summary missing link_planned count: %s", stdout)
+	}
+	if _, err := os.Lstat(filepath.Join(fx.wt, ".env")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("dry-run should not create .env symlink, stat err=%v", err)
 	}
 }
 
