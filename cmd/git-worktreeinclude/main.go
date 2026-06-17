@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/satococoa/git-worktreeinclude/internal/cli"
+	"github.com/falleng0d/git-worktreeinclude/internal/cli"
 )
 
 func main() {

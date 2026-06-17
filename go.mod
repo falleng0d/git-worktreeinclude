@@ -1,4 +1,4 @@
-module github.com/satococoa/git-worktreeinclude
+module github.com/falleng0d/git-worktreeinclude
 
 go 1.26.0
 

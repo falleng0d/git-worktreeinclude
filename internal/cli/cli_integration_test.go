@@ -244,7 +244,7 @@ func TestApplyLinksDirectoryRoot(t *testing.T) {
 	}
 }
 
-func TestApplyForceLinkReplacesDirecto≈ryTarget(t *testing.T) {
+func TestApplyForceLinkReplacesDirectoryTarget(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink behavior and permissions vary on Windows")
 	}

@@ -12,8 +12,8 @@ import (
 
 	ucli "github.com/urfave/cli/v3"
 
-	"github.com/satococoa/git-worktreeinclude/internal/engine"
-	"github.com/satococoa/git-worktreeinclude/internal/exitcode"
+	"github.com/falleng0d/git-worktreeinclude/internal/engine"
+	"github.com/falleng0d/git-worktreeinclude/internal/exitcode"
 )
 
 const testIncludeFile = ".test.worktreeinclude"

@@ -14,8 +14,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/satococoa/git-worktreeinclude/internal/exitcode"
-	"github.com/satococoa/git-worktreeinclude/internal/gitexec"
+	"github.com/falleng0d/git-worktreeinclude/internal/exitcode"
+	"github.com/falleng0d/git-worktreeinclude/internal/gitexec"
 )
 
 type Action struct {

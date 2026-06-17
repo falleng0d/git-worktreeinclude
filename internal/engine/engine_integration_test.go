@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/satococoa/git-worktreeinclude/internal/exitcode"
+	"github.com/falleng0d/git-worktreeinclude/internal/exitcode"
 )
 
 type engineFixture struct {

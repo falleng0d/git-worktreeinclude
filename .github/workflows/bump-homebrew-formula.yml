@@ -37,7 +37,7 @@ jobs:
         if: ${{ !contains(steps.tag.outputs.name, '-') }}
         uses: mislav/bump-homebrew-formula-action@v4
         with:
-          homebrew-tap: satococoa/homebrew-tap
+          homebrew-tap: falleng0d/homebrew-tap
           formula-name: git-worktreeinclude
           formula-path: git-worktreeinclude.rb
           tag-name: ${{ steps.tag.outputs.name }}

@@ -7,8 +7,8 @@
 ### Install (Homebrew)
 
 ```sh
-brew tap satococoa/tap
-brew install satococoa/tap/git-worktreeinclude
+brew tap falleng0d/tap
+brew install falleng0d/tap/git-worktreeinclude
 ```
 
 ### Build
