@@ -215,7 +215,7 @@ func (e *Engine) executePrepared(prep prepared, dryRun, force, forceLink bool) (
 			continue
 		}
 
-		if dstInfo.IsDir() {
+		if dstInfo.IsDir() && (op != "link" || !forceThis) {
 			result.Actions = append(result.Actions, Action{Op: "conflict", Path: rel, Status: "diff"})
 			result.Summary.Conflicts++
 			continue

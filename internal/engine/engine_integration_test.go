@@ -150,6 +150,64 @@ func TestEngineApplyLinksDirectoryRoot(t *testing.T) {
 	}
 }
 
+func TestEngineApplyForceLinkReplacesDirectoryTarget(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink behavior and permissions vary on Windows")
+	}
+
+	fx := setupEngineFixture(t)
+	e := NewEngine()
+	writeFile(t, filepath.Join(fx.root, ".gitignore"), ".env\n.env.local\nplans/\n")
+	if err := os.MkdirAll(filepath.Join(fx.root, "plans"), 0o755); err != nil {
+		t.Fatalf("mkdir source plans: %v", err)
+	}
+	writeFile(t, filepath.Join(fx.root, "plans", "note.txt"), "SOURCE_PLAN\n")
+	writeFile(t, filepath.Join(fx.root, ".worktreelink"), "/plans\n")
+	if err := os.MkdirAll(filepath.Join(fx.wt, "plans"), 0o755); err != nil {
+		t.Fatalf("mkdir target plans: %v", err)
+	}
+	writeFile(t, filepath.Join(fx.wt, "plans", "old.txt"), "TARGET_PLAN\n")
+
+	res, code, err := e.Apply(context.Background(), fx.wt, ApplyOptions{
+		From:      "auto",
+		Include:   testIncludeFile,
+		ForceLink: true,
+	})
+	if err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+	if code != exitcode.OK {
+		t.Fatalf("Apply exit code = %d, want %d", code, exitcode.OK)
+	}
+	if res.Summary.Linked != 1 {
+		t.Fatalf("expected one linked directory, got %+v", res.Summary)
+	}
+	if res.Summary.Conflicts != 0 {
+		t.Fatalf("expected no conflicts, got %+v", res.Summary)
+	}
+
+	info, err := os.Lstat(filepath.Join(fx.wt, "plans"))
+	if err != nil {
+		t.Fatalf("lstat plans: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected plans to be a symlink")
+	}
+	target, err := os.Readlink(filepath.Join(fx.wt, "plans"))
+	if err != nil {
+		t.Fatalf("readlink plans: %v", err)
+	}
+	if filepath.Clean(target) != filepath.Join(fx.root, "plans") {
+		t.Fatalf("unexpected symlink target: %q", target)
+	}
+	if _, err := os.Stat(filepath.Join(fx.wt, "plans", "old.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("old target contents should be removed, stat err=%v", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(fx.wt, "plans", "note.txt")); err != nil || string(got) != "SOURCE_PLAN\n" {
+		t.Fatalf("linked directory contents should come from source, got=%q err=%v", got, err)
+	}
+}
+
 func TestEngineApplyLinksWorktreeLinkOverlap(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink behavior and permissions vary on Windows")
