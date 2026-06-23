@@ -4,11 +4,10 @@
 
 ## Quickstart
 
-### Install (Homebrew)
+### Install
 
 ```sh
-brew tap falleng0d/tap
-brew install falleng0d/tap/git-worktreeinclude
+go install github.com/falleng0d/git-worktreeinclude/cmd/git-worktreeinclude@latest
 ```
 
 ### Build
