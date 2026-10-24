@@ -254,6 +254,17 @@ func formatActionLine(action engine.Action, force bool) string {
 			return fmt.Sprintf("ERROR     %s (link failed)", action.Path)
 		}
 		return fmt.Sprintf("LINK      %s", action.Path)
+	case "ide-state":
+		switch action.Status {
+		case "planned":
+			return fmt.Sprintf("IDE       %s (new project ID, copy IDE state) (dry-run)", action.Path)
+		case "done":
+			return fmt.Sprintf("IDE       %s (new project ID, copied IDE state)", action.Path)
+		case "same":
+			return fmt.Sprintf("SKIP      %s (project ID already separate)", action.Path)
+		default:
+			return fmt.Sprintf("ERROR     %s (IDE state copy failed)", action.Path)
+		}
 	case "conflict":
 		if force {
 			return fmt.Sprintf("COPY      %s", action.Path)

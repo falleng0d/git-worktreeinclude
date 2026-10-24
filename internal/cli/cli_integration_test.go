@@ -33,6 +33,9 @@ func TestMain(m *testing.M) {
 	}()
 
 	testBinary = filepath.Join(binDir, "git-worktreeinclude")
+	if runtime.GOOS == "windows" {
+		testBinary += ".exe"
+	}
 	build := exec.Command("go", "build", "-o", testBinary, "./cmd/git-worktreeinclude")
 	build.Dir = repoRoot
 	build.Stdout = os.Stdout

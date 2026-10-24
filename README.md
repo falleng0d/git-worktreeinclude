@@ -109,6 +109,19 @@ Safe defaults:
 - Never overwrites by default (differences become conflicts, exit code `3`)
 - Missing source `.worktreeinclude` is a no-op success (exit code `0`)
 
+### JetBrains IDE projects
+
+When `.idea/workspace.xml` is copied (not linked), `apply` gives the target worktree its own JetBrains project ID. JetBrains IDEs store open tabs, tool window layout, the project tree and window state in `<config>/<product>/workspace/<ProjectId>.xml`. Worktrees that share an ID overwrite each other's state.
+
+For each IDE config folder (`JetBrains` and `Google` under the user config folder, such as `~/Library/Application Support`, `~/.config` or `%APPDATA%`) that has state for the source project ID, `apply`:
+
+- generates a new ID and writes it to the target `.idea/workspace.xml`
+- copies the source state to `workspace/<new id>.xml`
+- rewrites source root paths to the target root in both files
+- adds the target to `options/recentProjects.xml` with the source window size and position, if the target is not listed yet
+
+A running IDE rewrites `recentProjects.xml` from memory, so the window position only carries over when the IDE is closed during `apply`. The step is skipped when the target already has its own ID. A `workspace.xml` that differs from the source only by its ID and root path counts as `same`. With `--force`, the target keeps its existing ID and its state is replaced by the source state. If the target still has the source ID, the step runs even when `workspace.xml` is a conflict. This also fixes worktrees created before this feature.
+
 ## JSON output
 
 `apply --json` emits a single JSON object to stdout.

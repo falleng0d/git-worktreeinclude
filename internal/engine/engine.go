@@ -62,7 +62,8 @@ type ApplyOptions struct {
 }
 
 type Engine struct {
-	git *gitexec.Runner
+	git            *gitexec.Runner
+	ideConfigRoots []string
 }
 
 type CLIError struct {
@@ -92,7 +93,7 @@ func (e *CLIError) Unwrap() error {
 }
 
 func NewEngine() *Engine {
-	return &Engine{git: gitexec.NewRunner()}
+	return &Engine{git: gitexec.NewRunner(), ideConfigRoots: jetbrainsConfigRoots()}
 }
 
 type prepared struct {
@@ -147,10 +148,16 @@ func (e *Engine) executePrepared(prep prepared, dryRun, force, forceLink bool) (
 	}
 
 	executeActions := !dryRun
+	splitWorkspace := false
+	reuseProjectID := ""
 	for _, rel := range prep.matched {
 		op := "copy"
 		if _, ok := prep.linked[rel]; ok {
 			op = "link"
+		}
+		if rel == jetbrainsWorkspaceRel && op == "copy" {
+			splitWorkspace = true
+			reuseProjectID = previousProjectID(prep)
 		}
 		forceThis := force
 		if op == "link" && forceLink {
@@ -236,7 +243,13 @@ func (e *Engine) executePrepared(prep prepared, dryRun, force, forceLink bool) (
 		}
 
 		if op == "copy" && dstInfo.Mode()&os.ModeSymlink == 0 {
-			same, err := filesSame(srcPath, dstPath)
+			sameFn := filesSame
+			if rel == jetbrainsWorkspaceRel {
+				sameFn = func(src, dst string) (bool, error) {
+					return jetbrainsWorkspaceSame(src, dst, prep.sourceRoot, prep.targetRoot)
+				}
+			}
+			same, err := sameFn(srcPath, dstPath)
 			if err != nil {
 				result.Actions = append(result.Actions, Action{Op: "skip", Path: rel, Status: "error"})
 				result.Summary.Errors++
@@ -266,6 +279,15 @@ func (e *Engine) executePrepared(prep prepared, dryRun, force, forceLink bool) (
 		}
 		result.Actions = append(result.Actions, Action{Op: op, Path: rel, Status: status})
 		recordMaterialized(&result.Summary, op, dryRun)
+	}
+
+	if splitWorkspace {
+		if action, ok := e.splitJetBrainsProject(prep.sourceRoot, prep.targetRoot, reuseProjectID, dryRun); ok {
+			result.Actions = append(result.Actions, action)
+			if action.Status == "error" {
+				result.Summary.Errors++
+			}
+		}
 	}
 
 	if result.Summary.Errors > 0 {
