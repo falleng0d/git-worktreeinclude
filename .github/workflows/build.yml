@@ -1,0 +1,109 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build snapshot
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --snapshot --clean
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: git-worktreeinclude-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+
+  smoke-test:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            os: Linux
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            os: Linux
+            arch: arm64
+          - runner: macos-15-intel
+            os: Darwin
+            arch: x86_64
+          - runner: macos-15
+            os: Darwin
+            arch: arm64
+          - runner: windows-latest
+            os: Windows
+            arch: x86_64
+          - runner: windows-11-arm
+            os: Windows
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Download binaries
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: git-worktreeinclude-${{ github.sha }}
+          path: artifact
+
+      - name: Verify and run binary
+        env:
+          TARGET: ${{ matrix.os }}_${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          cd artifact
+          shopt -s nullglob
+          archives=(git-worktreeinclude_*_"$TARGET".tar.gz git-worktreeinclude_*_"$TARGET".zip)
+          [ "${#archives[@]}" -eq 1 ]
+          archive="${archives[0]}"
+          line="$(awk -v f="$archive" '$2 == f' checksums.txt)"
+          [ -n "$line" ]
+          if command -v sha256sum >/dev/null; then
+            printf '%s\n' "$line" | sha256sum -c -
+          else
+            printf '%s\n' "$line" | shasum -a 256 -c -
+          fi
+          out="$(mktemp -d "$RUNNER_TEMP/extract.XXXXXX")"
+          case "$archive" in
+            *.zip) unzip -q "$archive" -d "$out" ;;
+            *) tar -xzf "$archive" -C "$out" ;;
+          esac
+          bin="$out/git-worktreeinclude"
+          [ "$RUNNER_OS" = Windows ] && bin="$bin.exe"
+          "$bin" --version
+          "$bin" --help

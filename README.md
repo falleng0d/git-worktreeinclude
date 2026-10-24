@@ -4,7 +4,13 @@
 
 ## Quickstart
 
-### Install
+### Download a binary
+
+Download a release archive from [GitHub Releases](https://github.com/falleng0d/git-worktreeinclude/releases). Binaries are built for macOS, Linux, and Windows on x86-64 and ARM64. Extract the archive and put the executable on your `PATH`. Each release includes `checksums.txt` for SHA-256 verification.
+
+For the latest development build, open the **Build** workflow under GitHub Actions, select a successful run, and download its artifact. These builds run on pushes to `main` or manual dispatch, never on pull requests. Each build verifies archive checksums and runs every binary on its matching operating system and architecture. A GitHub login is required to download workflow artifacts. Fork pull requests also skip CI jobs.
+
+### Install with Go
 
 ```sh
 go install github.com/falleng0d/git-worktreeinclude/cmd/git-worktreeinclude@latest
